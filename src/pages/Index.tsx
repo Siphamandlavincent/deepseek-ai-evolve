@@ -4,8 +4,9 @@ import { ModelConfig } from '@/components/ModelConfig';
 import { TrainingDashboard } from '@/components/TrainingDashboard';
 import { APIInterface } from '@/components/APIInterface';
 import { UpgradeManager } from '@/components/UpgradeManager';
+import { ChatInterface } from '@/components/ChatInterface';
 import { Navigation } from '@/components/Navigation';
-import { Brain, Cpu, Code, ArrowUp } from 'lucide-react';
+import { Brain, Cpu, Code, ArrowUp, MessageSquare } from 'lucide-react';
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState('model');
@@ -14,6 +15,7 @@ const Index = () => {
     { id: 'model', label: 'Model Config', icon: Brain },
     { id: 'training', label: 'Training', icon: Cpu },
     { id: 'api', label: 'API Interface', icon: Code },
+    { id: 'chat', label: 'Chat', icon: MessageSquare },
     { id: 'upgrade', label: 'Upgrades', icon: ArrowUp },
   ];
 
@@ -49,6 +51,7 @@ const Index = () => {
         {activeTab === 'model' && <ModelConfig />}
         {activeTab === 'training' && <TrainingDashboard />}
         {activeTab === 'api' && <APIInterface />}
+        {activeTab === 'chat' && <ChatInterface />}
         {activeTab === 'upgrade' && <UpgradeManager />}
       </div>
     </div>
