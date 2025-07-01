@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,22 +7,39 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Code, Send, Key, Activity, Zap } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 export const APIInterface = () => {
   const [prompt, setPrompt] = useState('');
   const [response, setResponse] = useState('');
   const [loading, setLoading] = useState(false);
-  const [apiKey, setApiKey] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
     
     setLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      setResponse(`Generated response for: "${prompt}"\n\nThis is a simulated response from the DeepSeek AI model. In a real implementation, this would connect to the actual API endpoint and return the model's generated text based on your prompt.`);
+    setError(null);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('chat-ai', {
+        body: { message: prompt }
+      });
+
+      if (error) throw error;
+
+      if (data.success) {
+        setResponse(data.message);
+      } else {
+        throw new Error(data.error || 'Failed to generate response');
+      }
+    } catch (err) {
+      console.error('API error:', err);
+      setError('Failed to generate response. Please check your configuration.');
+      setResponse('Error: Unable to generate response. Please ensure the OpenAI API key is configured in Supabase Edge Function secrets.');
+    } finally {
       setLoading(false);
-    }, 2000);
+    }
   };
 
   const codeExamples = {
@@ -107,17 +123,6 @@ console.log(response.choices[0].text);`,
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-slate-300">API Key</Label>
-              <Input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="Enter your API key"
-                className="bg-slate-700 border-slate-600 text-white"
-              />
-            </div>
-
-            <div className="space-y-2">
               <Label className="text-slate-300">Prompt</Label>
               <Textarea
                 value={prompt}
@@ -145,6 +150,12 @@ console.log(response.choices[0].text);`,
                 </>
               )}
             </Button>
+
+            {error && (
+              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
+                {error}
+              </div>
+            )}
 
             {response && (
               <div className="space-y-2">

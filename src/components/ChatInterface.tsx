@@ -4,7 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Send, Bot, User } from 'lucide-react';
+import { Send, Bot, User, AlertCircle } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 interface Message {
   id: string;
@@ -17,13 +18,14 @@ export const ChatInterface = () => {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      content: 'Hello! I\'m DeepSeek AI. I can help you with training models, generating text, and answering questions about AI. How can I assist you today?',
+      content: 'Hello! I\'m DeepSeek AI. I can help you with AI training, model development, and technical questions. How can I assist you today?',
       sender: 'ai',
       timestamp: new Date(),
     },
   ]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -52,29 +54,41 @@ export const ChatInterface = () => {
     setMessages(prev => [...prev, userMessage]);
     setInputMessage('');
     setIsLoading(true);
+    setError(null);
 
-    // Simulate AI response
-    setTimeout(() => {
-      const aiResponses = [
-        "I understand you're interested in AI training. DeepSeek AI specializes in advanced language models with enhanced reasoning capabilities.",
-        "That's a great question! Our model uses optimized attention mechanisms and knowledge graph integration for better performance.",
-        "For training custom models, I recommend starting with our pre-trained base model and fine-tuning on your specific dataset.",
-        "The API allows you to integrate DeepSeek capabilities into your applications. You can adjust parameters like temperature and max tokens.",
-        "Our upgrade system ensures you always have access to the latest model improvements and performance optimizations.",
-      ];
+    try {
+      const { data, error } = await supabase.functions.invoke('chat-ai', {
+        body: { message: inputMessage }
+      });
 
-      const randomResponse = aiResponses[Math.floor(Math.random() * aiResponses.length)];
+      if (error) throw error;
 
-      const aiMessage: Message = {
+      if (data.success) {
+        const aiMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          content: data.message,
+          sender: 'ai',
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, aiMessage]);
+      } else {
+        throw new Error(data.error || 'Failed to get AI response');
+      }
+    } catch (err) {
+      console.error('Chat error:', err);
+      setError('Failed to get AI response. Please check your configuration.');
+      
+      // Add error message to chat
+      const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: randomResponse,
+        content: 'I apologize, but I\'m having trouble connecting to the AI service right now. Please make sure the OpenAI API key is configured in your Supabase Edge Function secrets.',
         sender: 'ai',
         timestamp: new Date(),
       };
-
-      setMessages(prev => [...prev, aiMessage]);
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -88,9 +102,17 @@ export const ChatInterface = () => {
     <div className="max-w-4xl mx-auto">
       <Card className="bg-slate-800/50 border-slate-700/50 backdrop-blur-xl h-[600px] flex flex-col">
         <CardHeader className="border-b border-slate-700/50">
-          <CardTitle className="text-white flex items-center gap-2">
-            <Bot className="w-5 h-5 text-purple-400" />
-            Chat with DeepSeek AI
+          <CardTitle className="text-white flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Bot className="w-5 h-5 text-purple-400" />
+              Chat with DeepSeek AI
+            </div>
+            {error && (
+              <div className="flex items-center gap-1 text-red-400 text-sm">
+                <AlertCircle className="w-4 h-4" />
+                Connection Error
+              </div>
+            )}
           </CardTitle>
         </CardHeader>
         
@@ -151,6 +173,11 @@ export const ChatInterface = () => {
           
           {/* Input Area */}
           <div className="border-t border-slate-700/50 p-4">
+            {error && (
+              <div className="mb-3 p-2 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
+                {error}
+              </div>
+            )}
             <div className="flex gap-2">
               <Textarea
                 value={inputMessage}
