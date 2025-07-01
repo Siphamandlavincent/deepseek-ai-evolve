@@ -1,24 +1,26 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Send, Bot, User, AlertCircle } from 'lucide-react';
+import { Send, Bot, User, AlertCircle, Brain } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { useConversationMemory } from '@/hooks/useConversationMemory';
+import { FeedbackButtons } from '@/components/FeedbackButtons';
 
 interface Message {
   id: string;
   content: string;
   sender: 'user' | 'ai';
   timestamp: Date;
+  feedback?: 'positive' | 'negative';
 }
 
 export const ChatInterface = () => {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      content: 'Hello! I\'m DeepSeek AI. I can help you with AI training, model development, and technical questions. How can I assist you today?',
+      content: 'Hello! I\'m DeepSeek AI with advanced learning capabilities. I can remember our conversations, learn from your feedback, and continuously improve. How can I assist you today?',
       sender: 'ai',
       timestamp: new Date(),
     },
@@ -27,6 +29,8 @@ export const ChatInterface = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  
+  const { saveConversation, addFeedback, getContextualPrompt } = useConversationMemory();
 
   const scrollToBottom = () => {
     if (scrollAreaRef.current) {
@@ -52,13 +56,17 @@ export const ChatInterface = () => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const currentInput = inputMessage;
     setInputMessage('');
     setIsLoading(true);
     setError(null);
 
     try {
+      // Get contextual prompt with conversation history
+      const contextualPrompt = getContextualPrompt(currentInput);
+      
       const { data, error } = await supabase.functions.invoke('chat-ai', {
-        body: { message: inputMessage }
+        body: { message: contextualPrompt }
       });
 
       if (error) throw error;
@@ -71,6 +79,15 @@ export const ChatInterface = () => {
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, aiMessage]);
+        
+        // Extract potential knowledge from the conversation
+        let learnedKnowledge = '';
+        if (currentInput.includes('remember') || currentInput.includes('important')) {
+          learnedKnowledge = `User mentioned: ${currentInput}`;
+        }
+        
+        // Save conversation to memory
+        await saveConversation(currentInput, data.message, learnedKnowledge);
       } else {
         throw new Error(data.error || 'Failed to get AI response');
       }
@@ -78,7 +95,6 @@ export const ChatInterface = () => {
       console.error('Chat error:', err);
       setError('Failed to get AI response. Please check your configuration.');
       
-      // Add error message to chat
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         content: 'I apologize, but I\'m having trouble connecting to the AI service right now. Please make sure the OpenAI API key is configured in your Supabase Edge Function secrets.',
@@ -89,6 +105,15 @@ export const ChatInterface = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleFeedback = (messageId: string, feedback: 'positive' | 'negative') => {
+    setMessages(prev => 
+      prev.map(msg => 
+        msg.id === messageId ? { ...msg, feedback } : msg
+      )
+    );
+    addFeedback(messageId, feedback);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -104,8 +129,11 @@ export const ChatInterface = () => {
         <CardHeader className="border-b border-slate-700/50">
           <CardTitle className="text-white flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Bot className="w-5 h-5 text-purple-400" />
-              Chat with DeepSeek AI
+              <div className="relative">
+                <Bot className="w-5 h-5 text-purple-400" />
+                <Brain className="w-3 h-3 text-green-400 absolute -top-1 -right-1" />
+              </div>
+              Chat with Learning AI
             </div>
             {error && (
               <div className="flex items-center gap-1 text-red-400 text-sm">
@@ -133,17 +161,27 @@ export const ChatInterface = () => {
                     </div>
                   )}
                   
-                  <div
-                    className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                      message.sender === 'user'
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-slate-700/50 text-slate-200 border border-slate-600/50'
-                    }`}
-                  >
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                    <span className="text-xs opacity-70 mt-1 block">
-                      {message.timestamp.toLocaleTimeString()}
-                    </span>
+                  <div className="flex flex-col max-w-[80%]">
+                    <div
+                      className={`rounded-lg px-4 py-2 ${
+                        message.sender === 'user'
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-slate-700/50 text-slate-200 border border-slate-600/50'
+                      }`}
+                    >
+                      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                      <span className="text-xs opacity-70 mt-1 block">
+                        {message.timestamp.toLocaleTimeString()}
+                      </span>
+                    </div>
+                    
+                    {message.sender === 'ai' && (
+                      <FeedbackButtons
+                        messageId={message.id}
+                        onFeedback={handleFeedback}
+                        currentFeedback={message.feedback}
+                      />
+                    )}
                   </div>
                   
                   {message.sender === 'user' && (
