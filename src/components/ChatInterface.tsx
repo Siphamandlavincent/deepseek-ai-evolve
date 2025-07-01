@@ -1,12 +1,24 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Send, Bot, User, AlertCircle, Brain } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 import { useConversationMemory } from '@/hooks/useConversationMemory';
 import { FeedbackButtons } from '@/components/FeedbackButtons';
+
+// Declare puter as a global variable
+declare global {
+  interface Window {
+    puter: {
+      ai: {
+        chat: (message: string) => Promise<string>;
+      };
+      print: (message: string) => void;
+    };
+  }
+}
 
 interface Message {
   id: string;
@@ -20,7 +32,7 @@ export const ChatInterface = () => {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      content: 'Hello! I\'m DeepSeek AI with advanced learning capabilities. I can remember our conversations, learn from your feedback, and continuously improve. How can I assist you today?',
+      content: 'Hello! I\'m DeepSeek AI with advanced learning capabilities powered by GPT-4o. I can remember our conversations, learn from your feedback, and continuously improve. How can I assist you today?',
       sender: 'ai',
       timestamp: new Date(),
     },
@@ -28,9 +40,27 @@ export const ChatInterface = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPuterLoaded, setIsPuterLoaded] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   
   const { saveConversation, addFeedback, getContextualPrompt } = useConversationMemory();
+
+  // Load Puter.js script
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://js.puter.com/v2/';
+    script.onload = () => {
+      setIsPuterLoaded(true);
+    };
+    script.onerror = () => {
+      setError('Failed to load Puter.js. Please check your internet connection.');
+    };
+    document.head.appendChild(script);
+
+    return () => {
+      document.head.removeChild(script);
+    };
+  }, []);
 
   const scrollToBottom = () => {
     if (scrollAreaRef.current) {
@@ -46,7 +76,7 @@ export const ChatInterface = () => {
   }, [messages]);
 
   const handleSendMessage = async () => {
-    if (!inputMessage.trim()) return;
+    if (!inputMessage.trim() || !isPuterLoaded) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -65,39 +95,33 @@ export const ChatInterface = () => {
       // Get contextual prompt with conversation history
       const contextualPrompt = getContextualPrompt(currentInput);
       
-      const { data, error } = await supabase.functions.invoke('chat-ai', {
-        body: { message: contextualPrompt }
-      });
+      // Use puter.ai.chat() for GPT-4o text generation
+      const response = await window.puter.ai.chat(contextualPrompt);
 
-      if (error) throw error;
-
-      if (data.success) {
-        const aiMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: data.message,
-          sender: 'ai',
-          timestamp: new Date(),
-        };
-        setMessages(prev => [...prev, aiMessage]);
-        
-        // Extract potential knowledge from the conversation
-        let learnedKnowledge = '';
-        if (currentInput.includes('remember') || currentInput.includes('important')) {
-          learnedKnowledge = `User mentioned: ${currentInput}`;
-        }
-        
-        // Save conversation to memory
-        await saveConversation(currentInput, data.message, learnedKnowledge);
-      } else {
-        throw new Error(data.error || 'Failed to get AI response');
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: response,
+        sender: 'ai',
+        timestamp: new Date(),
+      };
+      
+      setMessages(prev => [...prev, aiMessage]);
+      
+      // Extract potential knowledge from the conversation
+      let learnedKnowledge = '';
+      if (currentInput.includes('remember') || currentInput.includes('important')) {
+        learnedKnowledge = `User mentioned: ${currentInput}`;
       }
+      
+      // Save conversation to memory
+      await saveConversation(currentInput, response, learnedKnowledge);
     } catch (err) {
       console.error('Chat error:', err);
-      setError('Failed to get AI response. Please check your configuration.');
+      setError('Failed to get AI response from GPT-4o.');
       
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        content: 'I apologize, but I\'m having trouble connecting to the AI service right now. Please make sure the OpenAI API key is configured in your Supabase Edge Function secrets.',
+        content: 'I apologize, but I\'m having trouble connecting to the GPT-4o service right now. Please try again in a moment.',
         sender: 'ai',
         timestamp: new Date(),
       };
@@ -133,14 +157,22 @@ export const ChatInterface = () => {
                 <Bot className="w-5 h-5 text-purple-400" />
                 <Brain className="w-3 h-3 text-green-400 absolute -top-1 -right-1" />
               </div>
-              Chat with Learning AI
+              Chat with GPT-4o Learning AI
             </div>
-            {error && (
-              <div className="flex items-center gap-1 text-red-400 text-sm">
-                <AlertCircle className="w-4 h-4" />
-                Connection Error
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              {!isPuterLoaded && (
+                <div className="flex items-center gap-1 text-yellow-400 text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  Loading Puter.js...
+                </div>
+              )}
+              {error && (
+                <div className="flex items-center gap-1 text-red-400 text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  Connection Error
+                </div>
+              )}
+            </div>
           </CardTitle>
         </CardHeader>
         
@@ -216,6 +248,11 @@ export const ChatInterface = () => {
                 {error}
               </div>
             )}
+            {!isPuterLoaded && (
+              <div className="mb-3 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg text-yellow-400 text-sm">
+                Loading Puter.js library for GPT-4o integration...
+              </div>
+            )}
             <div className="flex gap-2">
               <Textarea
                 value={inputMessage}
@@ -223,10 +260,11 @@ export const ChatInterface = () => {
                 onKeyPress={handleKeyPress}
                 placeholder="Type your message here... (Press Enter to send, Shift+Enter for new line)"
                 className="flex-1 min-h-[60px] max-h-[120px] bg-slate-700/50 border-slate-600/50 text-white placeholder-slate-400 resize-none"
+                disabled={!isPuterLoaded}
               />
               <Button
                 onClick={handleSendMessage}
-                disabled={!inputMessage.trim() || isLoading}
+                disabled={!inputMessage.trim() || isLoading || !isPuterLoaded}
                 className="bg-purple-600 hover:bg-purple-700 text-white px-4 self-end"
               >
                 <Send className="w-4 h-4" />
